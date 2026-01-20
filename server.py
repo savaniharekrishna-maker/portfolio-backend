@@ -9,6 +9,10 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import List
 import uuid
 from datetime import datetime, timezone
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
 
 
 ROOT_DIR = Path(__file__).parent
@@ -18,6 +22,35 @@ load_dotenv(ROOT_DIR / '.env')
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
+
+
+def send_email_notification(name, email, message):
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = os.environ["EMAIL_USER"]
+        msg["To"] = os.environ["EMAIL_TO"]
+        msg["Subject"] = "📩 New Portfolio Contact Message"
+
+        body = f"""
+        New contact form submission:
+
+        Name: {name}
+        Email: {email}
+
+        Message:
+        {message}
+        """
+
+        msg.attach(MIMEText(body, "plain"))
+
+        server = smtplib.SMTP(os.environ["EMAIL_HOST"], int(os.environ["EMAIL_PORT"]))
+        server.starttls()
+        server.login(os.environ["EMAIL_USER"], os.environ["EMAIL_PASS"])
+        server.send_message(msg)
+        server.quit()
+
+    except Exception as e:
+        logging.error(f"Email error: {e}")
 
 # Create the main app without a prefix
 app = FastAPI()
@@ -84,7 +117,6 @@ async def get_status_checks():
 @api_router.post("/contact")
 async def submit_contact_form(contact_data: ContactFormSubmit):
     try:
-        # Create contact document
         contact_doc = {
             "name": contact_data.name,
             "email": contact_data.email,
@@ -92,21 +124,28 @@ async def submit_contact_form(contact_data: ContactFormSubmit):
             "timestamp": datetime.utcnow(),
             "read": False
         }
-        
-        # Insert into MongoDB
+
         result = await db.contacts.insert_one(contact_doc)
-        
+
+        send_email_notification(
+            contact_data.name,
+            contact_data.email,
+            contact_data.message
+        )
+
         return {
             "success": True,
             "message": "Contact form submitted successfully",
             "id": str(result.inserted_id)
         }
+
     except Exception as e:
         logging.error(f"Error submitting contact form: {str(e)}")
         return {
             "success": False,
             "message": f"Failed to submit contact form: {str(e)}"
         }
+
 
 @api_router.get("/contact", response_model=List[ContactFormResponse])
 async def get_contact_submissions():
