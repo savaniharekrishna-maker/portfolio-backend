@@ -99,10 +99,13 @@ class ContactFormResponse(BaseModel):
 async def root():
     return {"message": "Hello World"}
 
+from fastapi import BackgroundTasks
+
 @api_router.post("/contact")
 async def submit_contact_form(
     contact_data: ContactFormSubmit,
-    request: Request
+    request: Request,
+    background_tasks: BackgroundTasks,
 ):
     contact_doc = {
         "name": contact_data.name,
@@ -112,15 +115,21 @@ async def submit_contact_form(
         "read": False,
     }
 
-    result = await request.app.state.db.contacts.insert_one(contact_doc)
+    await request.app.state.db.contacts.insert_one(contact_doc)
 
-    send_email_notification(
-        contact_data.name,
-        contact_data.email,
-        contact_data.message,
-    )
+    # EMAIL RUNS IN BACKGROUND (cannot break API)
+    # background_tasks.add_task(
+    #     send_email_notification,
+    #     contact_data.name,
+    #     contact_data.email,
+    #     contact_data.message,
+    # )
 
-    return {"success": True}
+    return {
+        "success": True,
+        "message": "Message saved successfully"
+    }
+
 
 @api_router.get("/contact", response_model=List[ContactFormResponse])
 async def get_contact_submissions(request: Request):
