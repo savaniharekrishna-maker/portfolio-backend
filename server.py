@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import List
 import uuid
 from datetime import datetime, timezone
-import smtplib
+import requests
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -42,30 +42,31 @@ async def shutdown_db():
 # --------------------------------------------------
 def send_email_notification(name, email, message):
     try:
-        msg = MIMEMultipart()
-        msg["From"] = os.environ["EMAIL_USER"]
-        msg["To"] = os.environ["EMAIL_TO"]
-        msg["Subject"] = "📩 New Portfolio Contact Message"
+        response = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {os.environ['RESEND_API_KEY']}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": "Portfolio <onboarding@resend.dev>",
+                "to": [os.environ["EMAIL_TO"]],
+                "subject": "📩 New Portfolio Contact Message",
+                "html": f"""
+                <h3>New Contact Form Submission</h3>
+                <p><strong>Name:</strong> {name}</p>
+                <p><strong>Email:</strong> {email}</p>
+                <p><strong>Message:</strong><br>{message}</p>
+                """,
+            },
+            timeout=10,
+        )
 
-        body = f"""
-New contact form submission:
-
-Name: {name}
-Email: {email}
-
-Message:
-{message}
-"""
-        msg.attach(MIMEText(body, "plain"))
-
-        server = smtplib.SMTP(os.environ["EMAIL_HOST"], int(os.environ["EMAIL_PORT"]))
-        server.starttls()
-        server.login(os.environ["EMAIL_USER"], os.environ["EMAIL_PASS"])
-        server.send_message(msg)
-        server.quit()
+        response.raise_for_status()
 
     except Exception as e:
-        logging.error(f"Email error: {e}")
+        logging.error(f"Email API error: {e}")
+
 
 # --------------------------------------------------
 # MODELS
